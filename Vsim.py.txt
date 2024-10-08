@@ -1,0 +1,963 @@
+# On  my  honor,  I  have  neither  given  nor  received unauthorized  aid  on  this  assignment
+from collections import deque
+import sys, json, math
+
+
+registers = {
+    0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 
+    8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 
+    16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0, 22: 0, 23: 0, 
+    24: 0, 25: 0, 26: 0, 27: 0, 28: 0, 29: 0, 30: 0, 31: 0
+}
+registers_write_status = {
+    0: False, 1: False, 2: False, 3: False, 4: False, 5: False, 6: False, 7: False,
+    8: False, 9: False, 10: False, 11: False, 12: False, 13: False, 14: False, 15: False,
+    16: False, 17: False, 18: False, 19: False, 20: False, 21: False, 22: False, 23: False,
+    24: False, 25: False, 26: False, 27: False, 28: False, 29: False, 30: False, 31: False
+}
+
+registers_read_status = {
+    0: False, 1: False, 2: False, 3: False, 4: False, 5: False, 6: False, 7: False,
+    8: False, 9: False, 10: False, 11: False, 12: False, 13: False, 14: False, 15: False,
+    16: False, 17: False, 18: False, 19: False, 20: False, 21: False, 22: False, 23: False,
+    24: False, 25: False, 26: False, 27: False, 28: False, 29: False, 30: False, 31: False
+}
+registers_write_status_copy = registers_write_status.copy()
+registers_read_status_copy = registers_read_status.copy()
+
+data_mem = {}
+instruction_mem = {}
+decoded_instructions={}
+pre_alu_status={"preALU1Q":[True, True], "preALU2Q":[True, True], "preALU3Q":[True, True]}
+
+if_stalled=False
+if_unit={"waiting": 0,"executed": 0}
+pre_issue_queue = deque(maxlen=4)
+pre_alu1_queue = deque(maxlen=2)
+pre_mem_queue = deque(maxlen=1)
+post_mem_queue = deque(maxlen=1)
+pre_alu2_queue = deque(maxlen=1)
+post_alu2_queue = deque(maxlen=1)
+pre_alu3_queue = deque(maxlen=1)
+post_alu3_queue = deque(maxlen=1)
+
+while_flag=True
+cycle=0
+pc=256
+break_ins_encountered=False
+break_encountered=False
+data_start=0
+
+OUTPUT_EXECUTE="simulation.txt"
+
+
+#---------------------------------------------------------------------Decoding Instructions--------------------------------------------------------------
+
+
+def read_input_file(filename):
+    binary_instructions = []
+    try:
+        with open(OUTPUT_EXECUTE, "w") as file:
+            file.close()
+            pass
+        with open(filename, 'r') as file:
+            for line in file:
+                binary_instructions.append(line.strip())
+    except Exception as e:
+        print(f"An error occurred while opening files, probably due to permission issues: {e}")
+    
+    return binary_instructions
+
+
+def decode_instructions(binary_instructions):
+    for instruction in binary_instructions:
+        if not break_encountered:
+            if instruction[-2:] == "00":
+                decode_instructions_cat1(instruction)
+            elif instruction[-2:] == "01":
+                decode_instructions_cat2(instruction)
+            elif instruction[-2:] == "10":
+                decode_instructions_cat3(instruction)
+            elif instruction[-2:] == "11":
+                decode_instructions_cat4(instruction)
+        else:
+            decode_memory(instruction)
+
+        
+def decode_instructions_cat1(instruction):
+    global pc, decoded_instructions, instruction_mem
+    opcode = instruction[25:30]
+    immediate_value = instruction[0:7]+instruction[20:25]
+    func3 = instruction[17:20]
+    rs1 = instruction[12:17]
+    rs2 = instruction[7:12]
+
+    if opcode == "00000":
+        # print(immediate_value)
+        try:
+            decoded_instruction = "beq"+" "+binary_to_register(rs1)+", "+ binary_to_register(rs2)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "beq",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "immediate_value":two_s_binary_to_int(immediate_value)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00001":
+        try:
+            decoded_instruction = "bne"+" "+binary_to_register(rs1)+", "+ binary_to_register(rs2)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "bne",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "immediate_value":two_s_binary_to_int(immediate_value)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00010":
+        try:
+            decoded_instruction = "blt"+" "+binary_to_register(rs1)+", "+ binary_to_register(rs2)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "blt",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "immediate_value":two_s_binary_to_int(immediate_value)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00011":
+        try:
+            decoded_instruction = "sw"+" "+binary_to_register(rs1)+", "+str(two_s_binary_to_int(immediate_value))+"("+ binary_to_register(rs2)+")"
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "sw",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "immediate_value":two_s_binary_to_int(immediate_value)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+
+
+def decode_instructions_cat2(instruction):
+    global pc, decoded_instructions, instruction_mem
+    opcode = instruction[25:30]
+    rd = instruction[20:25]
+    func3 = instruction[17:20]
+    rs1 = instruction[12:17]
+    rs2 = instruction[7:12]
+    func7 = instruction[0:7]
+    
+    if opcode == "00000":
+        try:
+            decoded_instruction = "add"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+binary_to_register(rs2)
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "add",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00001":
+        try:
+            decoded_instruction = "sub"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+binary_to_register(rs2)
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "sub",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00010":
+        try:
+            decoded_instruction = "and"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+binary_to_register(rs2)
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "and",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00011":
+        try:
+            decoded_instruction = "or"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+binary_to_register(rs2)
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "or",
+                "rs1":binary_to_int(rs1),
+                "rs2":binary_to_int(rs2),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    
+
+def decode_instructions_cat3(instruction):
+    global pc, decoded_instructions, instruction_mem
+    opcode = instruction[25:30]
+    rd = instruction[20:25]
+    func3 = instruction[17:20]
+    rs1 = instruction[12:17]
+    immediate_value = instruction[0:12]
+
+    if opcode == "00000":
+        try:
+            decoded_instruction = "addi"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "addi",
+                "rs1":binary_to_int(rs1),
+                "immediate_value":two_s_binary_to_int(immediate_value),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+        # print(immediate_value)
+    elif opcode == "00001":
+        try:
+            decoded_instruction = "andi"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "andi",
+                "rs1":binary_to_int(rs1),
+                "immediate_value":two_s_binary_to_int(immediate_value),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00010":
+        try:
+            decoded_instruction = "ori"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "ori",
+                "rs1":binary_to_int(rs1),
+                "immediate_value":two_s_binary_to_int(immediate_value),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00011":
+        try:
+            decoded_instruction = "sll"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "sll",
+                "rs1":binary_to_int(rs1),
+                "immediate_value":two_s_binary_to_int(immediate_value),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00100":
+        try:
+            decoded_instruction = "sra"+" "+binary_to_register(rd)+", "+ binary_to_register(rs1)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "sra",
+                "rs1":binary_to_int(rs1),
+                "immediate_value":two_s_binary_to_int(immediate_value),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "00101":
+        try:
+            decoded_instruction = "lw"+" "+binary_to_register(rd)+", "+str(two_s_binary_to_int(immediate_value))+"("+ binary_to_register(rs1)+")"
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "lw",
+                "rs1":binary_to_int(rs1),
+                "immediate_value":two_s_binary_to_int(immediate_value),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+
+
+def decode_instructions_cat4(instruction):
+    global pc, decoded_instructions, instruction_mem, break_encountered, data_start
+    opcode = instruction[25:30]
+    rd = instruction[20:25]
+    immediate_value = instruction[0:20]
+    if opcode == "00000":
+        try:
+            decoded_instruction = "jal"+" "+binary_to_register(rd)+", "+"#"+str(two_s_binary_to_int(immediate_value))
+            # print_disassembly(instruction+"\t"+decoded_instruction)
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "jal",
+                "immediate_value":two_s_binary_to_int(immediate_value),
+                "rd":binary_to_int(rd)
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+    elif opcode == "11111":
+        try:
+            decoded_instruction = "break"
+            decoded_instructions[pc]=decoded_instruction
+            functional_instruction={
+                "operation": "break"
+            }
+            instruction_mem[pc] = functional_instruction
+            pc+=4
+            break_encountered=True
+            data_start=pc
+        except Exception as e:
+            print(f"An error occurred with instruction pc:{pc} and the exception is {e}")
+
+
+def decode_memory(instruction):
+    global pc, decoded_instructions, data_mem
+    memory_value = two_s_binary_to_int(instruction)
+    decoded_memory_ins = instruction+"\t"+str(pc)+" "+str(memory_value)
+    # decoded_instructions.append(decoded_memory_ins)
+    data_mem[pc]=memory_value
+    pc+=4
+
+
+def two_s_binary_to_int(binary_string_input):
+    # print(binary_string_input)
+    if binary_string_input[0] == '1':
+        inverted_bits = "".join('1' if bit == '0' else '0' for bit in binary_string_input)
+        decimal_value = int(inverted_bits, 2) + 1
+        # print(decimal_value)
+        return -decimal_value
+    else:
+        return int(binary_string_input, 2)
+    
+
+def binary_to_int(binary_string_input):
+    return int(binary_string_input, 2)
+    
+
+def binary_to_register(binary_string_input):
+    register_number=binary_to_int(binary_string_input)
+    register="x"+str(register_number)
+    return register
+
+
+#---------------------------------------------------------------------Execute Instructions--------------------------------------------------------------
+
+
+def execute_instructions():
+    global while_flag, pc, cycle,pre_issue_queue_len
+    while(while_flag):
+        pre_issue_queue_len=len(pre_issue_queue)
+        write_back()
+        execution_mem()
+        execution_alu3()
+        execution_alu2()
+        execution_alu1()
+        instruction_issue()
+        instruction_fetch()
+        copy()
+        
+def copy():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    registers_write_status_copy = registers_write_status.copy()
+    registers_read_status_copy = registers_read_status.copy()
+
+
+def instruction_fetch():
+    global pre_issue_queue_len, while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    instruction1=instruction_mem[pc]
+    if_unit={"waiting": 0,"executed": 0}
+    ops_to_check = ["jal", "bne", "beq", "blt"]
+    two_r_ops=["add", "sub", "and", "or"]
+    one_r_ops=["addi", "andi", "ori", "sll", "lw", "sra", "sw"]
+    registers_read = {i: False for i in range(32)}
+    registers_write = {i: False for i in range(32)}
+    for i in pre_issue_queue:
+        insruct1=instruction_mem[i]
+        if insruct1["operation"] in two_r_ops:
+            registers_write[insruct1["rd"]]=True
+            registers_read[insruct1["rs1"]]=True
+            registers_read[insruct1["rs2"]]=True
+        elif insruct1["operation"] in one_r_ops:
+            if insruct1["operation"]=="sw":
+                registers_read[insruct1["rs1"]]=True
+                registers_read[insruct1["rs2"]]=True
+            else:
+                registers_write[insruct1["rd"]]=True
+                registers_read[insruct1["rs1"]]=True
+
+    if instruction1["operation"]=="break":
+        if_unit["executed"]=pc
+        if (not pre_issue_queue and not pre_alu1_queue and not pre_mem_queue and 
+            not post_mem_queue and not pre_alu2_queue and not post_alu2_queue and 
+            not pre_alu3_queue and not post_alu3_queue):
+            while_flag = False
+        break_ins_encountered=True
+    if (pre_issue_queue_len == 4 or break_ins_encountered):
+        pass
+    else:
+        if instruction1["operation"] in ops_to_check:
+            if instruction1["operation"] == "beq":
+                rs1=instruction1["rs1"]
+                rs2=instruction1["rs2"]
+                imm_value = instruction1["immediate_value"]
+                if not registers_write_status_copy[rs1] and not registers_write_status_copy[rs2] and not registers_write[rs1] and not registers_write[rs2]:
+                    if_unit["executed"]=pc
+                    if registers[rs1]==registers[rs2]:
+                        pc+=imm_value*2
+                    else:
+                        pc+=4
+                else:
+                    if_unit["waiting"]=pc
+                    pass
+            elif instruction1["operation"] == "bne":
+                rs1=instruction1["rs1"]
+                rs2=instruction1["rs2"]
+                imm_value = instruction1["immediate_value"]
+                if not registers_write_status_copy[rs1] and not registers_write_status_copy[rs2] and not registers_write[rs1] and not registers_write[rs2]:
+                    if_unit["executed"]=pc
+                    if registers[rs1]!=registers[rs2]:
+                        pc+=imm_value*2
+                    else:
+                        pc+=4
+                else:
+                    if_unit["waiting"]=pc
+                    pass
+            elif instruction1["operation"] == "blt":
+                rs1=instruction1["rs1"]
+                rs2=instruction1["rs2"]
+                imm_value = instruction1["immediate_value"]
+                if not registers_write_status_copy[rs1] and not registers_write_status_copy[rs2] and not registers_write[rs1] and not registers_write[rs2]:
+                    if_unit["executed"]=pc
+                    if registers[rs1]<registers[rs2]:
+                        pc+=imm_value*2
+                    else:
+                        pc+=4
+                else:
+                    if_unit["waiting"]=pc
+                    pass
+            elif instruction1["operation"] == "jal":
+                rd=instruction1["rd"]
+                imm_value = instruction1["immediate_value"]
+                if not registers_write_status_copy[rd] and not registers_read_status_copy[rd] and not registers_write[rd] and not registers_read[rd]:
+                    if_unit["executed"]=pc
+                    registers[rd]=pc+4
+                    pc+=imm_value*2
+                else:
+                    if_unit["waiting"]=pc
+                    pass
+        else:
+            pre_issue_queue.append(pc)
+            pc+=4
+            if len(pre_issue_queue) == 4:
+                pass
+            else:
+                instruction2=instruction_mem[pc]
+                if instruction2["operation"]=="break":
+                    if_unit["executed"]=pc
+                    if (not pre_issue_queue and not pre_alu1_queue and not pre_mem_queue and 
+                        not post_mem_queue and not pre_alu2_queue and not post_alu2_queue and 
+                        not pre_alu3_queue and not post_alu3_queue):
+                        while_flag = False
+                    break_ins_encountered=True
+                if instruction2["operation"] in ops_to_check:
+                    if instruction2["operation"] == "beq":
+                        rs1=instruction2["rs1"]
+                        rs2=instruction2["rs2"]
+                        imm_value = instruction2["immediate_value"]
+                        if not registers_write_status_copy[rs1] and not registers_write_status_copy[rs2] and not registers_write[rs1] and not registers_write[rs2]:
+                            if_unit["executed"]=pc
+                            if registers[rs1]==registers[rs2]:
+                                pc+=imm_value*2
+                            else:
+                                pc+=4
+                        else:
+                            if_unit["waiting"]=pc
+                            pass
+                    elif instruction2["operation"] == "bne":
+                        rs1=instruction2["rs1"]
+                        rs2=instruction2["rs2"]
+                        imm_value = instruction2["immediate_value"]
+                        if not registers_write_status_copy[rs1] and not registers_write_status_copy[rs2] and not registers_write[rs1] and not registers_write[rs2]:
+                            if_unit["executed"]=pc
+                            if registers[rs1]!=registers[rs2]:
+                                pc+=imm_value*2
+                            else:
+                                pc+=4
+                        else:
+                            if_unit["waiting"]=pc
+                            pass
+                    elif instruction2["operation"] == "blt":
+                        rs1=instruction2["rs1"]
+                        rs2=instruction2["rs2"]
+                        imm_value = instruction2["immediate_value"]
+                        if not registers_write_status_copy[rs1] and not registers_write_status_copy[rs2] and not registers_write[rs1] and not registers_write[rs2]:
+                            if_unit["executed"]=pc
+                            if registers[rs1]<registers[rs2]:
+                                pc+=imm_value*2
+                            else:
+                                pc+=4
+                        else:
+                            if_unit["waiting"]=pc
+                            pass
+                    elif instruction2["operation"] == "jal":
+                        rd=instruction2["rd"]
+                        imm_value = instruction2["immediate_value"]
+                        if not registers_write_status_copy[rd] and not registers_read_status_copy[rd] and not registers_write[rd] and not registers_read[rd]:
+                            if_unit["executed"]=pc
+                            registers[rd]=pc+4
+                            pc+=imm_value*2
+                        else:
+                            if_unit["waiting"]=pc
+                            pass
+                else:
+                    pre_issue_queue.append(pc)
+                    pc+=4
+    cycle+=1
+    print_execution()
+
+def good_to_go(instructions_copy,pc):
+    if len(instructions_copy)==1:
+        return True
+    new_list = [instruction_mem[i] for i in instructions_copy]
+    # print(instructions_copy.index(pc))
+    for i in range(0,instructions_copy.index(pc)):
+        # print(new_list[i].get("operation"))
+        if new_list[i].get("operation")=="sw":
+            return False
+    return True    
+
+
+def good_to_go_store(instructions_copy,pc):
+    if len(instructions_copy)==1:
+        return True
+    new_list = [instruction_mem[i] for i in instructions_copy]
+    # print(instructions_copy.index(pc))
+    for i in range(0,instructions_copy.index(pc)):
+        # print(new_list[i].get("operation"))
+        if new_list[i].get("operation")=="sw":
+            return False
+    return True
+
+
+def instruction_issue():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    two_r_ops=["add", "sub", "and", "or"]
+    one_r_ops=["addi", "andi", "ori", "sll", "lw", "sra"]
+    alu1_ops=["lw", "sw"]
+    alu2_ops=["add", "sub", "addi"]
+    alu3_ops=["and", "or", "andi", "ori", "sll", "sra"]
+    count=0
+    if not pre_issue_queue:
+        pass
+    else:
+        instructions=[]
+        registers_read = {i: False for i in range(32)}
+        registers_write = {i: False for i in range(32)}
+        while pre_issue_queue:
+            instructions.append(pre_issue_queue.popleft())
+        instructions_copy = instructions.copy()
+        for i in instructions_copy:
+            ins=instruction_mem[i]
+            if ins["operation"] in two_r_ops:
+                if all(not registers_write_status_copy[reg] for reg in [ins["rd"], ins["rs1"], ins["rs2"]]) and all(not registers_read_status_copy[reg] for reg in [ins["rd"]]) and all(not registers_write[reg] for reg in [ins["rd"], ins["rs1"], ins["rs2"]]) and all(not registers_read[reg] for reg in [ins["rd"]]):
+                    if ins["operation"] in alu2_ops:
+                        if not pre_alu2_queue and pre_alu_status.get("preALU2Q")[1]:
+                            pre_alu2_queue.append(i)
+                            pre_alu_status.get("preALU2Q")[0]=False
+                            pre_alu_status.get("preALU2Q")[1]=False
+                            registers_write_status[ins["rd"]]=True
+                            registers_read_status[ins["rs1"]]=True
+                            registers_read_status[ins["rs2"]]=True
+                            registers_write_status_copy[ins["rd"]]=True
+                            registers_read_status_copy[ins["rs1"]]=True
+                            registers_read_status_copy[ins["rs2"]]=True
+                            instructions.remove(i)
+                    elif ins["operation"] in alu3_ops:
+                        if not pre_alu3_queue and pre_alu_status.get("preALU3Q")[1]:
+                            pre_alu3_queue.append(i)
+                            pre_alu_status.get("preALU3Q")[0]=False
+                            pre_alu_status.get("preALU3Q")[1]=False
+                            registers_write_status[ins["rd"]]=True
+                            registers_read_status[ins["rs1"]]=True
+                            registers_read_status[ins["rs2"]]=True
+                            registers_write_status_copy[ins["rd"]]=True
+                            registers_read_status_copy[ins["rs1"]]=True
+                            registers_read_status_copy[ins["rs2"]]=True
+                            instructions.remove(i)
+                registers_write[ins["rd"]]=True
+                registers_read[ins["rs1"]]=True
+                registers_read[ins["rs2"]]=True
+            elif ins["operation"] in one_r_ops:
+                if all(not registers_write_status_copy[reg] for reg in [ins["rd"], ins["rs1"]]) and all(not registers_read_status_copy[reg] for reg in [ins["rd"]]) and all(not registers_write[reg] for reg in [ins["rd"], ins["rs1"]]) and all(not registers_read[reg] for reg in [ins["rd"]]):
+                    if ins["operation"] in alu2_ops:
+                        if not pre_alu2_queue and pre_alu_status.get("preALU2Q")[1]:
+                            pre_alu2_queue.append(i)
+                            pre_alu_status.get("preALU2Q")[0]=False
+                            pre_alu_status.get("preALU2Q")[1]=False
+                            registers_write_status[ins["rd"]]=True
+                            registers_read_status[ins["rs1"]]=True
+                            registers_write_status_copy[ins["rd"]]=True
+                            registers_read_status_copy[ins["rs1"]]=True
+                            instructions.remove(i)
+                    elif ins["operation"] in alu3_ops:
+                        if not pre_alu3_queue and pre_alu_status.get("preALU3Q")[1]:
+                            pre_alu3_queue.append(i)
+                            pre_alu_status.get("preALU3Q")[0]=False
+                            pre_alu_status.get("preALU3Q")[1]=False
+                            registers_write_status[ins["rd"]]=True
+                            registers_read_status[ins["rs1"]]=True
+                            registers_write_status_copy[ins["rd"]]=True
+                            registers_read_status_copy[ins["rs1"]]=True
+                            instructions.remove(i)
+                    elif ins["operation"] in alu1_ops:
+                        if len(pre_alu1_queue)<2 and pre_alu_status.get("preALU1Q")[1] and count<1 and good_to_go(instructions,i):
+                            count+=1
+                            pre_alu1_queue.append(i)
+                            if len(pre_alu1_queue)==2:
+                                pre_alu_status.get("preALU1Q")[0]=False
+                                pre_alu_status.get("preALU1Q")[1]=False
+                            registers_write_status[ins["rd"]]=True
+                            registers_read_status[ins["rs1"]]=True
+                            registers_write_status_copy[ins["rd"]]=True
+                            registers_read_status_copy[ins["rs1"]]=True
+                            instructions.remove(i)
+                registers_write[ins["rd"]]=True
+                registers_read[ins["rs1"]]=True
+            elif ins["operation"] =="sw":
+                if all(not registers_write_status_copy[reg] for reg in [ins["rs2"], ins["rs1"]]) and all(not registers_write[reg] for reg in [ins["rs2"], ins["rs1"]]):
+                    if len(pre_alu1_queue)<2 and count<1 and good_to_go_store(instructions, i):
+                        count+=1
+                        pre_alu1_queue.append(i)
+                        registers_read_status[ins["rs1"]]=True
+                        registers_read_status[ins["rs2"]]=True
+                        registers_read_status_copy[ins["rs1"]]=True
+                        registers_read_status_copy[ins["rs2"]]=True
+                        instructions.remove(i)
+                registers_read[ins["rs1"]]=True
+                registers_read[ins["rs2"]]=True
+        for instruction in instructions:
+            pre_issue_queue.append(instruction)    
+        
+
+def execution_alu1():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    if not pre_alu1_queue:
+        if pre_alu_status.get("preALU1Q")[0]==True and pre_alu_status.get("preALU1Q")[1]==False:
+            pre_alu_status.get("preALU1Q")[1]=True
+        pass
+    else:
+        i=pre_alu1_queue.popleft()
+        pre_alu_status.get("preALU1Q")[0]=True
+        instruction = instruction_mem[i]
+        if instruction["operation"]=="lw":
+            address= instruction["immediate_value"]+registers[instruction["rs1"]]
+            pre_mem_queue.append({i:address})
+            registers_read_status[instruction["rs1"]]=False
+        elif instruction["operation"]=="sw":
+            address = instruction["immediate_value"]+registers[instruction["rs2"]]
+            pre_mem_queue.append({i:address})
+            registers_read_status[instruction["rs2"]]=False
+
+
+def execution_alu2():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    if not pre_alu2_queue:
+        if pre_alu_status.get("preALU2Q")[0]==True and pre_alu_status.get("preALU2Q")[1]==False:
+            pre_alu_status.get("preALU2Q")[1]=True
+        pass
+    else:
+        i=pre_alu2_queue.popleft()
+        pre_alu_status.get("preALU2Q")[0]=True
+        instruction = instruction_mem[i]
+        if instruction["operation"]=="add":
+            output= registers[instruction["rs1"]]+registers[instruction["rs2"]]
+            post_alu2_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+            registers_read_status[instruction["rs2"]]=False
+        elif instruction["operation"]=="addi":
+            output = registers[instruction["rs1"]]+instruction["immediate_value"]
+            post_alu2_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+        elif instruction["operation"]=="sub":
+            output = registers[instruction["rs1"]]-registers[instruction["rs2"]]
+            post_alu2_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+            registers_read_status[instruction["rs2"]]=False
+
+
+def execution_alu3():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    if not pre_alu3_queue:
+        if pre_alu_status.get("preALU3Q")[0]==True and pre_alu_status.get("preALU3Q")[1]==False:
+            pre_alu_status.get("preALU3Q")[1]=True
+        pass
+    else:
+        i=pre_alu3_queue.popleft()
+        pre_alu_status.get("preALU3Q")[0]=True
+        instruction = instruction_mem[i]
+        if instruction["operation"]=="and":
+            output= registers[instruction["rs1"]]&registers[instruction["rs2"]]
+            post_alu3_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+            registers_read_status[instruction["rs2"]]=False
+        elif instruction["operation"]=="or":
+            output = registers[instruction["rs1"]]|registers[instruction["rs2"]]
+            post_alu3_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+            registers_read_status[instruction["rs2"]]=False
+        elif instruction["operation"]=="andi":
+            output = registers[instruction["rs1"]]&instruction["immediate_value"]
+            post_alu3_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+        elif instruction["operation"]=="ori":
+            output = registers[instruction["rs1"]]|instruction["immediate_value"]
+            post_alu3_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+        elif instruction["operation"]=="sll":
+            output = registers[instruction["rs1"]] << instruction["immediate_value"]
+            post_alu3_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+        elif instruction["operation"]=="sra":
+            output = registers[instruction["rs1"]] >> instruction["immediate_value"]
+            post_alu3_queue.append({i:output})
+            registers_read_status[instruction["rs1"]]=False
+
+
+def execution_mem():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    if not pre_mem_queue:
+        pass
+    else:
+        var1=pre_mem_queue.popleft()
+        var1, address = next(iter(var1.items()))
+        ins=instruction_mem[var1]
+        if ins["operation"] =="lw":
+            value=data_mem[address]
+            post_mem_queue.append({var1:value})
+        elif ins["operation"]=="sw":
+            data_mem[address]=registers[ins["rs1"]]
+            registers_read_status[ins["rs1"]]=False
+
+
+def write_back():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    if post_mem_queue:
+        element = post_mem_queue.popleft()
+        var1, output = next(iter(element.items()))
+        instruction = instruction_mem[var1]
+        registers[instruction["rd"]] = output
+        registers_write_status[instruction["rd"]]=False
+
+    if post_alu2_queue:
+        element = post_alu2_queue.popleft()
+        var1, output = next(iter(element.items()))
+        instruction = instruction_mem[var1]
+        registers[instruction["rd"]] = output
+        registers_write_status[instruction["rd"]]=False
+
+    if post_alu3_queue:
+        element = post_alu3_queue.popleft()
+        var1, output = next(iter(element.items()))
+        instruction = instruction_mem[var1]
+        registers[instruction["rd"]] = output
+        registers_write_status[instruction["rd"]]=False
+
+
+def print_execution():
+    global while_flag, data_mem, instruction_mem, decoded_instructions, pre_alu_status, if_stalled, registers, registers_write_status, registers_read_status, if_unit, pre_issue_queue, pre_alu1_queue, pre_mem_queue, post_mem_queue, pre_alu2_queue, post_alu2_queue, pre_alu3_queue, post_alu3_queue, cycle, pc, break_ins_encountered, registers_write_status_copy, registers_read_status_copy   
+    try:
+        with open(OUTPUT_EXECUTE, 'a') as file:
+            file.write("--------------------\n")
+            file.write(f"Cycle {cycle}:\n")
+
+            
+            file.write("\nIF Unit:\n")
+            if if_unit["waiting"] == 0:
+                file.write("\tWaiting:\n")
+            else:
+                file.write("\tWaiting:"+" "+"["+decoded_instructions[if_unit["waiting"]]+"]\n")
+            if if_unit["executed"] == 0:
+                file.write("\tExecuted:\n")
+            else:
+                file.write("\tExecuted:"+" "+"["+decoded_instructions[if_unit["executed"]]+"]\n")
+            
+            
+            file.write("Pre-Issue Queue:\n")
+            for i in range(4):
+                if i < len(pre_issue_queue):
+                    entry = pre_issue_queue[i]
+                    file.write(f"\tEntry {i}: [{decoded_instructions[entry]}]\n")
+                else:
+                    file.write(f"\tEntry {i}:\n")
+            
+
+            file.write("Pre-ALU1 Queue:\n")
+            for i in range(2):
+                if i < len(pre_alu1_queue):
+                    entry = pre_alu1_queue[i]
+                    file.write(f"\tEntry {i}: [{decoded_instructions[entry]}]\n")
+                else:
+                    file.write(f"\tEntry {i}:\n")
+            
+            
+            file.write("Pre-MEM Queue:")
+            if pre_mem_queue:
+                entry = pre_mem_queue[0]
+                var1, _ = next(iter(entry.items()))
+                file.write(f" [{decoded_instructions[var1]}]\n")
+            else:
+                file.write("\n")
+
+
+            file.write("Post-MEM Queue:")
+            if post_mem_queue:
+                entry = post_mem_queue[0]
+                var1, _ = next(iter(entry.items()))
+                file.write(f" [{decoded_instructions[var1]}]\n")
+            else:
+                file.write("\n")
+
+            
+            file.write("Pre-ALU2 Queue:")
+            if pre_alu2_queue:
+                entry = pre_alu2_queue[0]
+                file.write(f" [{decoded_instructions[entry]}]\n")
+            else:
+                file.write("\n")
+            
+
+            file.write("Post-ALU2 Queue:")
+            if post_alu2_queue:
+                entry = post_alu2_queue[0]
+                var1, _ = next(iter(entry.items()))
+                file.write(f" [{decoded_instructions[var1]}]\n")
+            else:
+                file.write("\n")
+
+
+            file.write("Pre-ALU3 Queue:")
+            if pre_alu3_queue:
+                entry = pre_alu3_queue[0]
+                file.write(f" [{decoded_instructions[entry]}]\n")
+            else:
+                file.write("\n")
+            
+
+            file.write("Post-ALU3 Queue:")
+            if post_alu3_queue:
+                entry = post_alu3_queue[0]
+                var1, _ = next(iter(entry.items()))
+                file.write(f" [{decoded_instructions[var1]}]\n")
+            else:
+                file.write("\n")
+            file.write("\n")
+    except Exception as e:
+        # Code to handle the exception
+        print(f"An error occurred while opening the file, probably some permission issue, exception: {e}")   
+    write_registers()
+    write_memory()
+    
+    
+
+def write_registers():
+    global registers
+    with open(OUTPUT_EXECUTE, 'a') as file:
+        file.write("Registers\n")
+        for i in range(0, 32, 8):
+            file.write(f"x{i:02d}:\t")
+            for j in range(i, i + 8):
+                file.write(f"{registers[j]}\t")
+            file.write('\n')
+        file.close()
+
+def write_memory():
+    global data_start, data_mem, pc
+    with open(OUTPUT_EXECUTE, 'a') as file:
+        file.write("Data\n")
+        rows = math.ceil(len(data_mem) / 8)
+        pointer = data_start
+        max=data_start+((len(data_mem)-1)*4)
+        for i in range(rows):
+            file.write(str(pointer)+":")
+            for j in range(8):
+                if pointer <=max:
+                    file.write("\t"+str(data_mem[pointer]))
+                    pointer=pointer+(4)
+                    if j==7 and i !=rows-1:
+                        file.write("\n")
+                else:
+                    break
+            if pointer >max:
+                break
+        if pc!=data_start:
+            file.write("\n")
+        
+        file.close()
+
+def main():
+    global pc, decoded_instructions, data_mem, instruction_mem, break_encountered
+    if len(sys.argv) < 2:
+        print("Usage: python project.py <input_filename>")
+        sys.exit(1)
+    input_filename = sys.argv[1]
+    binary_instructions = read_input_file(input_filename)
+    decode_instructions(binary_instructions)
+    break_encountered=False
+    pc=256
+    # print(decoded_instructions)
+    execute_instructions()
+    
+
+if __name__ == '__main__':
+    main()
